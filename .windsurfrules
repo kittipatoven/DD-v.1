@@ -1,0 +1,291 @@
+# 🌊 Windsurf Rules: DD Computer Chat Commerce Platform
+
+## 🎯 OBJECTIVE
+
+You are an expert full-stack AI engineer.
+Your task is to maintain, debug, refactor, and deploy a **Chat Commerce Platform** with high performance, scalability, and production readiness.
+
+---
+
+# 🧠 SYSTEM OVERVIEW
+
+## Architecture
+
+* Frontend: Next.js 14 + React 18 + TypeScript
+* Backend: NestJS (Modular Architecture)
+* Database: MySQL 8
+* Real-time: Socket.IO
+* Deployment Target: VPS (Linux Ubuntu)
+* Containerization: Docker + Docker Compose
+
+---
+
+# 📁 PROJECT STRUCTURE
+
+## Root
+
+* /frontend → Next.js App
+* /backend → NestJS API
+* /database → SQL schema
+* /.env → Environment variables
+* /docker-compose.yml → Multi-service orchestration
+
+---
+
+# 🐳 DOCKER REQUIREMENTS (CRITICAL)
+
+## You MUST:
+
+1. Containerize ALL services:
+
+   * frontend
+   * backend
+   * mysql
+
+2. Use docker-compose for orchestration
+
+3. Ensure:
+
+   * Services can communicate via internal network
+   * No hardcoded localhost (use service names instead)
+
+---
+
+# 🐳 DOCKER ARCHITECTURE
+
+## Services
+
+### 1. MySQL
+
+* Image: mysql:8
+* Port: 3306
+* Volume: persistent storage
+* Init SQL: /database/database.sql
+
+### 2. Backend (NestJS)
+
+* Port: 3001
+* Depends on: mysql
+* ENV:
+  DB_HOST=mysql
+  DB_PORT=3306
+
+### 3. Frontend (Next.js)
+
+* Port: 3000
+* Depends on: backend
+* ENV:
+  NEXT_PUBLIC_API_URL=http://backend:3001/api/v1
+
+---
+
+# ⚙️ DOCKER RULES
+
+## Backend Dockerfile
+
+* Use Node LTS (18+)
+* Multi-stage build
+* Run: npm run build + node dist/main.js
+
+## Frontend Dockerfile
+
+* Use Next.js production build
+* Run: npm run build + npm start
+
+## MySQL
+
+* MUST persist data using volume
+* MUST auto-import schema
+
+---
+
+# 🔥 BACKEND RULES (NestJS)
+
+## Architecture
+
+* Follow strict module separation
+* Each module MUST have:
+
+  * controller
+  * service
+  * entity
+
+## DO NOT:
+
+* Mix business logic in controllers
+* Use raw SQL unless necessary (prefer TypeORM)
+
+## MUST:
+
+* Use DTO validation (class-validator)
+* Use Guards for auth
+* Use Interceptors for logging
+
+---
+
+# 💬 CHAT SYSTEM RULES
+
+## WebSocket
+
+* Use Socket.IO Gateway
+* Handle:
+
+  * join room
+  * send message
+  * typing indicator
+  * read status
+
+## MUST:
+
+* Store messages in DB
+* Update unread count
+* Emit real-time events
+
+---
+
+# 🗄️ DATABASE RULES
+
+## MUST:
+
+* Use indexes:
+
+  * FULLTEXT (products)
+  * foreign keys
+  * frequently queried columns
+
+## DO:
+
+* Normalize data
+* Avoid N+1 queries
+
+---
+
+# 🔐 SECURITY RULES
+
+## MUST:
+
+* bcrypt password hashing
+* JWT authentication
+* Rate limit login
+* Validate all inputs
+
+## DO NOT:
+
+* Expose sensitive ENV
+* Trust client data
+
+---
+
+# 🎨 FRONTEND RULES (Next.js)
+
+## MUST:
+
+* Use App Router
+* Use Server Components when possible
+* Use Zustand for state
+
+## API
+
+* Centralized Axios instance
+* Handle token refresh
+
+## UI
+
+* Responsive
+* Dark theme support
+
+---
+
+# ⚡ PERFORMANCE RULES
+
+## Backend
+
+* Use caching if needed
+* Optimize queries
+
+## Frontend
+
+* Lazy load components
+* Optimize images
+
+---
+
+# 🚀 DEPLOYMENT RULES
+
+## VPS (Ubuntu)
+
+### MUST:
+
+* Use Docker Compose
+* Use NGINX reverse proxy
+* Enable HTTPS (Let's Encrypt)
+
+---
+
+# 🧠 AI EXECUTION RULES
+
+## When fixing bugs:
+
+1. Analyze root cause
+2. Check related modules
+3. Fix with minimal breakage
+
+## When adding features:
+
+1. Update backend first
+2. Then frontend
+3. Ensure API consistency
+
+## When refactoring:
+
+* Do NOT break API contracts
+
+---
+
+# ❗ STRICT RULES
+
+* NEVER guess database structure
+* ALWAYS check entity before writing query
+* NEVER hardcode URLs
+* ALWAYS respect environment variables
+
+---
+
+# 📌 OUTPUT EXPECTATION
+
+When you generate code:
+
+* Must be production-ready
+* Must be clean and modular
+* Must include comments when needed
+
+---
+
+# 🧪 TESTING
+
+## MUST:
+
+* Test API endpoints
+* Validate WebSocket events
+* Check DB consistency
+
+---
+
+# 🧩 FINAL GOAL
+
+Build a scalable, real-time chat commerce system similar to:
+
+* Facebook Marketplace Chat
+* LINE Shopping Chat
+* Shopee Chat System
+
+System must be:
+
+* Fast
+* Secure
+* Scalable
+* Maintainable
+
+---
+
+END OF RULES

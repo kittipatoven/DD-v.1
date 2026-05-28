@@ -1,0 +1,32 @@
+# Google Drive Service Account Credentials (DO NOT COMMIT)
+music-login-system-*.json
+*-*.json
+service-account*.json
+
+# Backup files
+backups/
+# *.sql  # Allow database.sql for schema
+# *.sql.gz  # Commented to allow database.sql
+
+# Environment files
+.env
+.env.production
+.env.local
+
+# Node modules
+node_modules/
+
+# Logs
+*.log
+logs/
+
+# Docker volumes
+mysql_data/
+
+# IDE
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db

@@ -1,0 +1,1 @@
+{"version":3,"file":"create-message.dto.js","sourceRoot":"","sources":["../../../src/chat/dto/create-message.dto.ts"],"names":[],"mappings":";;;;;;;;;;;;AAAA,qDAAiE;AAEjE,MAAa,gBAAgB;CAY5B;AAZD,4CAYC;AATC;IAFC,IAAA,0BAAQ,GAAE;IACV,IAAA,4BAAU,GAAE;;yDACW;AAIxB;IAFC,IAAA,0BAAQ,GAAE;IACV,IAAA,4BAAU,GAAE;;mDACK;AAIlB;IAFC,IAAA,0BAAQ,GAAE;IACV,IAAA,4BAAU,GAAE;;iDACG"}
