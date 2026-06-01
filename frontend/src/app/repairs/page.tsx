@@ -148,11 +148,13 @@ export default function RepairsPage() {
                 >
                   {/* Images */}
                   {repair.images && repair.images.length > 0 ? (
-                    <div className="relative h-48 bg-slate-900">
+                    <div className="relative flex h-48 items-center justify-center bg-slate-900 p-3">
                       <img
                         src={getImageUrl(repair.images[0].image_url)}
                         alt={repair.title}
-                        className="w-full h-full object-cover"
+                        loading="lazy"
+                        decoding="async"
+                        className="max-h-full max-w-full object-contain object-center"
                       />
                       <div className="absolute top-2 right-2 bg-black/50 px-2 py-1 rounded-lg flex items-center gap-1">
                         <ImageIcon className="w-4 h-4 text-white" />
@@ -288,7 +290,7 @@ export default function RepairsPage() {
                         <img
                           src={getImageUrl(image.image_url)}
                           alt={image.caption || 'Repair image'}
-                          className="w-full h-64 object-cover rounded-xl"
+                          className="w-full h-64 object-contain rounded-xl"
                         />
                         <div className="mt-2">
                           <span className={`inline-block px-2 py-1 rounded text-xs font-medium ${

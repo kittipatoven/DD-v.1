@@ -2,10 +2,10 @@
 
 import Link from 'next/link';
 import { useState, useEffect, useRef } from 'react';
-import { Eye, Flame, Sparkles, Recycle, MessageCircle, Share2 } from 'lucide-react';
+import { Eye, Flame, MessageCircle, Share2 } from 'lucide-react';
 import { Product } from '@/lib/product-api';
-import { getImageUrl } from '@/lib/image';
 import { settingsApi } from '@/lib/settings-api';
+import ProductImage from '@/components/ProductImage';
 
 interface ProductCardProps {
   product: Product;
@@ -14,24 +14,12 @@ interface ProductCardProps {
 export default function ProductCard({ product }: ProductCardProps) {
   const [lineId, setLineId] = useState<string>('');
   const [tilt, setTilt] = useState({ x: 0, y: 0 });
-  const [isLoaded, setIsLoaded] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    // Fetch LINE ID from settings
-    console.log('[ProductCard] Fetching settings...');
-    settingsApi.getPublic().then(settings => {
-      console.log('[ProductCard] Settings received:', settings);
-      console.log('[ProductCard] social_line value:', settings.social_line);
+    settingsApi.getPublic().then((settings) => {
       setLineId(settings.social_line || '');
-      console.log('[ProductCard] lineId set to:', settings.social_line || '');
-    }).catch(err => {
-      console.error('[ProductCard] Failed to fetch settings:', err);
-    });
-  }, []);
-
-  useEffect(() => {
-    setIsLoaded(true);
+    }).catch(() => {});
   }, []);
 
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -51,180 +39,129 @@ export default function ProductCard({ product }: ProductCardProps) {
   };
 
   const handleContact = () => {
-    console.log('[ProductCard] handleContact called');
-    console.log('[ProductCard] Current lineId state:', lineId);
-    console.log('[ProductCard] lineId type:', typeof lineId);
-    console.log('[ProductCard] lineId length:', lineId.length);
-
     if (lineId) {
-      const url = `https://line.me/ti/p/~${lineId}`;
-      console.log('[ProductCard] Opening LINE URL:', url);
-      window.open(url, '_blank');
+      window.open(`https://line.me/ti/p/~${lineId}`, '_blank');
     } else {
-      console.error('[ProductCard] lineId is empty, showing alert');
       alert('กรุณาติดตั้ง LINE ID ใน Settings');
     }
   };
 
   const handleShare = (e: React.MouseEvent) => {
     e.stopPropagation();
-    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000');
+    const siteUrl =
+      process.env.NEXT_PUBLIC_SITE_URL ||
+      (typeof window !== 'undefined' ? window.location.origin : '');
     const shareUrl = `${siteUrl}/products/${product.id}`;
     const shareText = `ดูสินค้า: ${product.name} ราคา ฿${parseFloat(product.price).toLocaleString()} ${shareUrl}`;
-
-    const lineShareUrl = `https://line.me/R/msg/text/?${encodeURIComponent(shareText)}`;
-    console.log('[ProductCard] Sharing via LINE:', lineShareUrl);
-    window.open(lineShareUrl, '_blank');
+    window.open(`https://line.me/R/msg/text/?${encodeURIComponent(shareText)}`, '_blank');
   };
 
-  console.log('[ProductCard DEBUG] ProductCard component rendered');
-  console.log('[ProductCard DEBUG] Product:', product);
-
-  const getProductImage = (product: Product) => {
-    console.log('[ProductCard DEBUG] Product:', product);
-    console.log('[ProductCard DEBUG] Product.images:', product.images);
-    console.log('[ProductCard DEBUG] Images length:', product.images?.length);
-    
-    if (product.images && product.images.length > 0) {
-      const imageUrl = product.images[0].image_url;
-      console.log('[ProductCard DEBUG] Image URL from DB:', imageUrl);
-      const fullUrl = getImageUrl(imageUrl);
-      console.log('[ProductCard DEBUG] Final image URL:', fullUrl);
-      return fullUrl;
-    }
-    console.log('[ProductCard DEBUG] No images, will use placeholder');
-    return null;
-  };
+  const imageSrc =
+    product.images && product.images.length > 0 ? product.images[0].image_url : null;
 
   const getBadge = () => {
-    console.log('[ProductCard DEBUG] Calculating badge for product:', product);
     if (product.stock <= 5 && product.stock > 0) {
-      console.log('[ProductCard DEBUG] Product has low stock, displaying badge');
       return {
         text: 'เหลือน้อย',
         icon: <Flame className="w-3 h-3" />,
         color: 'bg-orange-500',
       };
     }
-    // You can add more badge logic based on product properties
     return null;
   };
 
   const badge = getBadge();
-  const imageUrl = getProductImage(product);
 
   return (
     <div
       ref={cardRef}
-      className="group bg-slate-800 rounded-2xl overflow-hidden border border-slate-700 hover:border-blue-500/50 transition-all duration-300 hover:scale-105 hover:shadow-2xl hover:shadow-blue-500/20 tilt-card relative"
+      className="group relative overflow-hidden rounded-2xl border border-slate-700 bg-slate-800 transition-all duration-300 hover:scale-105 hover:border-blue-500/50 hover:shadow-2xl hover:shadow-blue-500/20 tilt-card"
       style={{
         transform: `perspective(1000px) rotateX(${tilt.x}deg) rotateY(${tilt.y}deg)`,
       }}
       onMouseMove={handleMouseMove}
       onMouseLeave={handleMouseLeave}
     >
-      {/* Glow effect on hover */}
-      <div className="absolute inset-0 bg-gradient-to-r from-blue-500/0 via-blue-500/5 to-green-500/0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
-      {/* Image */}
-      <Link href={`/products/${product.id}`} className="block relative h-48 overflow-hidden bg-slate-900">
-        {imageUrl ? (
-          <>
-            {!isLoaded && (
-              <div className="absolute inset-0 bg-gradient-to-r from-slate-800 via-slate-700 to-slate-800 animate-shimmer" />
-            )}
-            <img
-              src={imageUrl}
-              alt={product.name}
-              className={`w-full h-full object-cover group-hover:scale-110 transition-transform duration-500 ${isLoaded ? 'opacity-100' : 'opacity-0'}`}
-              onLoad={() => setIsLoaded(true)}
-              onError={(e) => {
-                console.error('[ProductCard] Image failed to load:', imageUrl);
-                e.currentTarget.src = '/placeholder.png';
-                setIsLoaded(true);
-              }}
-            />
-          </>
-        ) : (
-          <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-slate-800 to-slate-900">
-            <div className="text-gray-600">
-              <svg className="w-16 h-16 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-              </svg>
-            </div>
-          </div>
-        )}
-        
-        {/* Badge */}
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-blue-500/0 via-blue-500/5 to-green-500/0 opacity-0 transition-opacity duration-500 group-hover:opacity-100" />
+
+      <div className="relative border-b border-slate-700/50">
+        <Link href={`/products/${product.id}`} className="block">
+          <ProductImage
+            src={imageSrc}
+            alt={product.name}
+            aspect="4/3"
+            className="rounded-none border-0 p-3 sm:aspect-square sm:p-4"
+            imageClassName="h-full w-full max-h-full max-w-full"
+          />
+          <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-slate-900/60 to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
+        </Link>
+
         {badge && (
-          <div className={`absolute top-3 left-3 ${badge.color} text-white px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1 animate-bounce shadow-lg shadow-${badge.color.replace('bg-', '')}/30`}>
+          <div
+            className={`absolute left-3 top-3 ${badge.color} z-10 flex items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold text-white shadow-lg`}
+          >
             {badge.icon}
             {badge.text}
           </div>
         )}
 
-        {/* Quick View Button */}
-        <div className="absolute top-3 right-3 flex gap-2 opacity-0 group-hover:opacity-100 transition-all duration-300 transform translate-y-2 group-hover:translate-y-0">
+        <div className="absolute right-3 top-3 z-10 flex translate-y-2 gap-2 opacity-0 transition-all duration-300 group-hover:translate-y-0 group-hover:opacity-100">
           <button
+            type="button"
             onClick={handleShare}
-            className="bg-white/90 backdrop-blur-sm p-2 rounded-full hover:bg-white hover:scale-110 transition-all shadow-lg hover:shadow-blue-500/30"
+            className="rounded-full bg-white/90 p-2 shadow-lg backdrop-blur-sm transition-all hover:scale-110 hover:bg-white"
+            aria-label={`แชร์ ${product.name}`}
           >
-            <Share2 className="w-4 h-4 text-slate-900" />
+            <Share2 className="h-4 w-4 text-slate-900" />
           </button>
           <Link
             href={`/products/${product.id}`}
-            className="bg-white/90 backdrop-blur-sm p-2 rounded-full hover:bg-white hover:scale-110 transition-all shadow-lg hover:shadow-blue-500/30"
+            className="rounded-full bg-white/90 p-2 shadow-lg backdrop-blur-sm transition-all hover:scale-110 hover:bg-white"
+            aria-label={`ดู ${product.name}`}
           >
-            <Eye className="w-4 h-4 text-slate-900" />
+            <Eye className="h-4 w-4 text-slate-900" />
           </Link>
         </div>
+      </div>
 
-        {/* Overlay on hover */}
-        <div className="absolute inset-0 bg-gradient-to-t from-slate-900/80 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-      </Link>
-
-      {/* Content */}
       <div className="p-4">
         <Link href={`/products/${product.id}`}>
-          <h3 className="text-white font-semibold text-lg mb-2 line-clamp-1 group-hover:text-blue-400 transition-colors">
+          <h3 className="mb-2 line-clamp-1 text-lg font-semibold text-white transition-colors group-hover:text-blue-400">
             {product.name}
           </h3>
         </Link>
-        <p className="text-gray-400 text-sm mb-4 line-clamp-2 h-10">
-          {product.description}
-        </p>
+        <p className="mb-4 line-clamp-2 h-10 text-sm text-gray-400">{product.description}</p>
 
-        {/* Price and Stock */}
-        <div className="flex items-center justify-between mb-4">
+        <div className="mb-4 flex items-center justify-between">
           <div>
-            <span className="text-2xl font-bold bg-gradient-to-r from-blue-400 to-green-400 bg-clip-text text-transparent">
+            <span className="bg-gradient-to-r from-blue-400 to-green-400 bg-clip-text text-2xl font-bold text-transparent">
               ฿{parseFloat(product.price).toLocaleString()}
             </span>
             {product.category && (
-              <span className="text-xs text-gray-500 ml-2">
-                {product.category.name}
-              </span>
+              <span className="ml-2 text-xs text-gray-500">{product.category.name}</span>
             )}
           </div>
           {product.stock > 0 ? (
-            <span className="text-green-400 text-sm">มีสินค้า</span>
+            <span className="text-sm text-green-400">มีสินค้า</span>
           ) : (
-            <span className="text-red-400 text-sm font-medium">หมด</span>
+            <span className="text-sm font-medium text-red-400">หมด</span>
           )}
         </div>
 
-        {/* Action Button */}
         {product.stock > 0 ? (
           <button
+            type="button"
             onClick={handleContact}
-            className="w-full bg-gradient-to-r from-green-500 to-emerald-500 text-white py-2.5 rounded-xl font-semibold hover:opacity-90 transition-all hover:scale-105 active:scale-95 flex items-center justify-center gap-2 shadow-lg shadow-green-500/25 hover:shadow-green-500/40"
+            className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-green-500 to-emerald-500 py-2.5 font-semibold text-white shadow-lg shadow-green-500/25 transition-all hover:scale-105 hover:opacity-90 hover:shadow-green-500/40 active:scale-95"
           >
-            <MessageCircle className="w-4 h-4" />
+            <MessageCircle className="h-4 w-4" />
             ติดต่อซื้อสินค้า
           </button>
         ) : (
           <button
+            type="button"
             disabled
-            className="w-full bg-slate-700 text-gray-500 py-2.5 rounded-xl font-semibold cursor-not-allowed"
+            className="w-full cursor-not-allowed rounded-xl bg-slate-700 py-2.5 font-semibold text-gray-500"
           >
             หมดสินค้า
           </button>

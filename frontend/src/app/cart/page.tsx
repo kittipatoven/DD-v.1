@@ -6,6 +6,7 @@ import { useCartStore } from '@/store/cart-store';
 import { Trash2, Plus, Minus, ShoppingCart } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
+import { getImageUrl } from '@/lib/image';
 
 export default function CartPage() {
   const { user } = useAuthStore();
@@ -101,12 +102,14 @@ export default function CartPage() {
                   className="bg-slate-800 rounded-lg p-4 flex gap-4 items-center"
                 >
                   {item.product?.images && item.product.images.length > 0 ? (
-                    <div className="w-24 h-24 relative flex-shrink-0">
+                    <div className="relative flex h-24 w-24 flex-shrink-0 items-center justify-center rounded-lg bg-slate-900 p-2">
                       <Image
-                        src={item.product.images[0].image_url}
+                        src={getImageUrl(item.product.images[0].image_url)}
                         alt={item.product.name}
                         fill
-                        className="object-cover rounded-lg"
+                        sizes="96px"
+                        className="object-contain object-center"
+                        loading="lazy"
                       />
                     </div>
                   ) : (

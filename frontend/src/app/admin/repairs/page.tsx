@@ -233,7 +233,7 @@ export default function AdminRepairsPage() {
               <img
                 src={imageUrl}
                 alt={value}
-                className="w-12 h-12 rounded-lg object-cover border border-slate-700"
+                className="w-12 h-12 rounded-lg object-contain border border-slate-700"
               />
             ) : (
               <div className="w-12 h-12 bg-slate-900 rounded-lg flex items-center justify-center border border-slate-700">
@@ -506,11 +506,11 @@ export default function AdminRepairsPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
                 {imagePreviews.map((preview, index) => (
                   <div key={index} className="relative group glass-dark rounded-xl p-4 border border-slate-700/50">
-                    <div className="aspect-video rounded-lg overflow-hidden border border-slate-700/50 mb-3">
+                    <div className="mb-3 flex aspect-video items-center justify-center overflow-hidden rounded-lg border border-slate-700/50 bg-slate-900 p-2">
                       <img
                         src={preview}
                         alt={`Preview ${index}`}
-                        className="w-full h-full object-cover"
+                        className="max-h-full max-w-full object-contain object-center"
                       />
                     </div>
                     <p className="text-gray-400 text-sm truncate">{uploadedImages[index]?.name}</p>

@@ -7,11 +7,13 @@ import Footer from '@/components/Footer';
 import { productApi, Product } from '@/lib/product-api';
 import { useAuthStore } from '@/store/auth-store';
 import { settingsApi } from '@/lib/settings-api';
-import { MessageCircle, ArrowLeft, Package, Star, Share2, Copy, Facebook, Twitter, X, ZoomIn, X as CloseIcon } from 'lucide-react';
+import { MessageCircle, ArrowLeft, Star, Share2, Copy, Facebook, Twitter, ZoomIn } from 'lucide-react';
 import Loading from '@/components/ui/Loading';
 import Button from '@/components/ui/Button';
 import Badge from '@/components/ui/Badge';
 import Toast from '@/components/ui/Toast';
+import ProductImage from '@/components/ProductImage';
+import ImageLightbox from '@/components/ImageLightbox';
 import { getImageUrl } from '@/lib/image';
 
 export default function ProductDetailPage() {
@@ -23,7 +25,7 @@ export default function ProductDetailPage() {
   const [lineId, setLineId] = useState<string>('');
   const [showShareMenu, setShowShareMenu] = useState(false);
   const [toast, setToast] = useState<{ type: 'success' | 'error' | 'info' | 'warning'; message: string } | null>(null);
-  const [zoomedImage, setZoomedImage] = useState<string | null>(null);
+  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
   const shareMenuRef = useRef<HTMLDivElement>(null);
   const { isAuthenticated } = useAuthStore();
@@ -190,8 +192,8 @@ export default function ProductDetailPage() {
     return specs;
   };
 
-  const handleImageClick = (imageUrl: string) => {
-    setZoomedImage(imageUrl);
+  const openLightbox = (imageUrl: string) => {
+    setLightboxSrc(imageUrl);
   };
 
   const handleThumbnailClick = (index: number) => {
@@ -206,10 +208,6 @@ export default function ProductDetailPage() {
   const handleNextImage = () => {
     if (!product || !product.images || product.images.length === 0) return;
     setSelectedImageIndex((prev) => (prev === product.images!.length - 1 ? 0 : prev + 1));
-  };
-
-  const closeZoom = () => {
-    setZoomedImage(null);
   };
 
   if (loading) {
@@ -252,52 +250,51 @@ export default function ProductDetailPage() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
             {/* Product Images */}
             <div className="space-y-4">
-              <div className="bg-slate-800 rounded-2xl overflow-hidden border border-slate-700 relative group">
+              <div className="group relative rounded-2xl border border-slate-700 bg-slate-800">
                 {imageUrl ? (
                   <>
-                    {/* Previous Button */}
                     {product.images && product.images.length > 1 && (
                       <button
+                        type="button"
                         onClick={handlePreviousImage}
-                        className="absolute left-4 top-1/2 -translate-y-1/2 z-10 bg-black/50 hover:bg-black/70 text-white p-2 rounded-full transition-all opacity-0 group-hover:opacity-100"
+                        className="absolute left-2 top-1/2 z-10 -translate-y-1/2 rounded-full bg-black/50 p-2 text-white opacity-100 transition-all hover:bg-black/70 sm:left-4 sm:opacity-0 sm:group-hover:opacity-100"
+                        aria-label="รูปก่อนหน้า"
                       >
-                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
                         </svg>
                       </button>
                     )}
-                    
-                    <img
-                      src={imageUrl}
+
+                    <ProductImage
+                      src={product.images?.[selectedImageIndex]?.image_url}
                       alt={product.name}
-                      className="w-full h-96 object-cover cursor-pointer transition-transform group-hover:scale-105"
-                      onClick={() => handleImageClick(imageUrl)}
-                      onError={(e) => {
-                        console.error('[DEBUG PRODUCT] Main image failed to load:', imageUrl);
-                        e.currentTarget.src = '/placeholder.png';
-                      }}
+                      aspect="auto"
+                      priority
+                      onClick={() => openLightbox(imageUrl)}
+                      className="min-h-[min(400px,55vh)] w-full rounded-2xl p-4 sm:min-h-[min(500px,60vh)] lg:min-h-[min(560px,70vh)]"
+                      imageClassName="max-h-[min(520px,calc(70vh-3rem))] w-auto max-w-full cursor-zoom-in"
                     />
-                    
-                    {/* Next Button */}
+
                     {product.images && product.images.length > 1 && (
                       <button
+                        type="button"
                         onClick={handleNextImage}
-                        className="absolute right-4 top-1/2 -translate-y-1/2 z-10 bg-black/50 hover:bg-black/70 text-white p-2 rounded-full transition-all opacity-0 group-hover:opacity-100"
+                        className="absolute right-2 top-1/2 z-10 -translate-y-1/2 rounded-full bg-black/50 p-2 text-white opacity-100 transition-all hover:bg-black/70 sm:right-4 sm:opacity-0 sm:group-hover:opacity-100"
+                        aria-label="รูปถัดไป"
                       >
-                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                         </svg>
                       </button>
                     )}
-                    
-                    <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/30 pointer-events-none">
-                      <ZoomIn className="w-12 h-12 text-white" />
+
+                    <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-2xl bg-black/20 opacity-0 transition-opacity group-hover:opacity-100">
+                      <ZoomIn className="h-12 w-12 text-white drop-shadow-lg" aria-hidden />
                     </div>
                   </>
                 ) : (
-                  <div className="w-full h-96 flex items-center justify-center bg-gradient-to-br from-slate-800 to-slate-900">
-                    <Package className="w-24 h-24 text-slate-600" />
-                  </div>
+                  <ProductImage src={null} alt={product.name} aspect="auto" className="min-h-[20rem] rounded-2xl" />
                 )}
               </div>
               
@@ -308,33 +305,33 @@ export default function ProductDetailPage() {
                     const thumbUrl = getImageUrl(image.image_url);
                     const isSelected = index === selectedImageIndex;
                     return (
-                      <div
+                      <button
+                        type="button"
                         key={index}
-                        className={`bg-slate-800 rounded-lg overflow-hidden border-2 transition-all cursor-pointer relative group ${
-                          isSelected 
-                            ? 'border-blue-500 ring-2 ring-blue-500/50' 
+                        className={`relative overflow-hidden rounded-lg border-2 transition-all ${
+                          isSelected
+                            ? 'border-blue-500 ring-2 ring-blue-500/50'
                             : 'border-slate-700 hover:border-blue-500'
                         }`}
                         onClick={() => handleThumbnailClick(index)}
+                        onDoubleClick={() => openLightbox(thumbUrl)}
+                        aria-label={`เลือกรูปที่ ${index + 1}`}
+                        aria-current={isSelected ? 'true' : undefined}
                       >
-                        <img
-                          src={thumbUrl}
-                          alt={`${product.name} ${index + 1}`}
-                          className={`w-full h-20 object-cover ${isSelected ? 'opacity-100' : 'opacity-80 group-hover:opacity-100'}`}
-                          onError={(e) => {
-                            console.error('[DEBUG PRODUCT] Thumbnail failed to load:', thumbUrl);
-                            e.currentTarget.src = '/placeholder.png';
-                          }}
+                        <ProductImage
+                          src={image.image_url}
+                          alt={`${product.name} รูปที่ ${index + 1}`}
+                          aspect="square"
+                          className="rounded-none border-0 p-1"
+                          imageClassName={isSelected ? 'opacity-100' : 'opacity-80'}
+                          showShimmer={false}
                         />
-                        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/30 pointer-events-none">
-                          <ZoomIn className="w-6 h-6 text-white" />
-                        </div>
                         {isSelected && (
-                          <div className="absolute top-1 right-1 bg-blue-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold">
+                          <span className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-blue-500 text-xs font-bold text-white">
                             {index + 1}
-                          </div>
+                          </span>
                         )}
-                      </div>
+                      </button>
                     );
                   })}
                 </div>
@@ -522,25 +519,13 @@ export default function ProductDetailPage() {
         />
       )}
 
-      {/* Image Zoom Modal */}
-      {zoomedImage && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4"
-          onClick={closeZoom}
-        >
-          <button
-            className="absolute top-4 right-4 text-white hover:text-gray-300 transition-colors"
-            onClick={closeZoom}
-          >
-            <CloseIcon className="w-8 h-8" />
-          </button>
-          <img
-            src={zoomedImage}
-            alt="Zoomed product image"
-            className="max-w-full max-h-full object-contain"
-            onClick={(e) => e.stopPropagation()}
-          />
-        </div>
+      {lightboxSrc && (
+        <ImageLightbox
+          src={lightboxSrc}
+          alt={product.name}
+          isOpen={Boolean(lightboxSrc)}
+          onClose={() => setLightboxSrc(null)}
+        />
       )}
     </div>
   );

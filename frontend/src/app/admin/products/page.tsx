@@ -287,7 +287,7 @@ export default function AdminProductsPage() {
               <img
                 src={imageUrl}
                 alt={value}
-                className="w-12 h-12 rounded-lg object-cover border border-slate-700"
+                className="w-12 h-12 rounded-lg object-contain border border-slate-700"
                 onError={(e) => {
                   console.error('[DEBUG ADMIN] Image failed to load:', imageUrl);
                   e.currentTarget.style.display = 'none';
@@ -560,11 +560,11 @@ export default function AdminProductsPage() {
               <div className="grid grid-cols-4 gap-4 mt-4">
                 {imagePreviews.map((preview, index) => (
                   <div key={index} className="relative group">
-                    <div className="aspect-square rounded-xl overflow-hidden border-2 border-slate-700/50 group-hover:border-neon-green/50 transition-all">
+                    <div className="flex aspect-square items-center justify-center overflow-hidden rounded-xl border-2 border-slate-700/50 bg-slate-900 p-2 transition-all group-hover:border-neon-green/50">
                       <img
                         src={preview}
                         alt={`Preview ${index}`}
-                        className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
+                        className="max-h-full max-w-full object-contain object-center"
                       />
                     </div>
                     <button
