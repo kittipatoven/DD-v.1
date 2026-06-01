@@ -5,7 +5,7 @@
 # หลักการ: Ubuntu เชื่อมออกไปหา Cloudflare → ไม่ต้อง Public IP / Port Forward / CGNAT
 # Usage: sudo bash setup-cloudflare-tunnel.sh
 
-set -e
+set -euo pipefail
 
 echo "=========================================="
 echo "DD Computer - Cloudflare Tunnel Setup"
@@ -146,17 +146,21 @@ echo "=========================================="
 echo "STEP 3: สร้าง Tunnel"
 echo "=========================================="
 
-# Clean up existing config files to prevent YAML parsing errors
-print_info "ลบ config.yml เก่า (ถ้ามี)..."
-rm -f /etc/cloudflared/config.yml
-
 read -p "ตั้งชื่อ Tunnel (ddcomputer-tunnel): " TUNNEL_NAME
 TUNNEL_NAME=${TUNNEL_NAME:-ddcomputer-tunnel}
 
-# Delete existing tunnel if it exists
-if cloudflared tunnel list | grep -q "$TUNNEL_NAME"; then
-    echo "Tunnel '$TUNNEL_NAME' already exists. Deleting..."
-    cloudflared tunnel delete "$TUNNEL_NAME"
+# ใช้ tunnel เดิมถ้ามี (ลบเฉพาะเมื่อผู้ใช้ยืนยัน — ป้องกัน DNS 530 จาก tunnel ID เปลี่ยน)
+TUNNEL_ID=""
+if cloudflared tunnel list 2>/dev/null | grep -q "$TUNNEL_NAME"; then
+    TUNNEL_ID=$(cloudflared tunnel list 2>/dev/null | awk -v n="$TUNNEL_NAME" '$0 ~ n {print $1}' | head -1)
+    print_success "พบ Tunnel เดิม: $TUNNEL_NAME ($TUNNEL_ID)"
+    read -p "ใช้ tunnel เดิม? (Y/n): " USE_EXISTING
+    USE_EXISTING=${USE_EXISTING:-Y}
+    if [[ ! "$USE_EXISTING" =~ ^[Yy]$ ]]; then
+        print_warning "ลบ tunnel เก่า..."
+        cloudflared tunnel delete "$TUNNEL_NAME" || true
+        TUNNEL_ID=""
+    fi
 fi
 
 # Double-check certificate before creating tunnel
@@ -166,11 +170,14 @@ if [ ! -f "/root/.cloudflared/cert.pem" ]; then
     exit 1
 fi
 
-echo "Creating tunnel..."
-TUNNEL_OUTPUT=$(cloudflared tunnel create "$TUNNEL_NAME")
-TUNNEL_ID=$(echo "$TUNNEL_OUTPUT" | grep -oE '[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}' | head -1)
+if [ -z "$TUNNEL_ID" ]; then
+    echo "Creating tunnel..."
+    TUNNEL_OUTPUT=$(cloudflared tunnel create "$TUNNEL_NAME")
+    TUNNEL_ID=$(echo "$TUNNEL_OUTPUT" | grep -oE '[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}' | head -1)
+fi
 
 if [ -z "$TUNNEL_ID" ]; then
+    TUNNEL_OUTPUT="${TUNNEL_OUTPUT:-}"
     print_error "ไม่สามารถสร้าง Tunnel ได้"
     print_error "Output: $TUNNEL_OUTPUT"
     echo ""
@@ -216,79 +223,48 @@ mkdir -p /etc/cloudflared
 # Cloudflare Tunnel always uses HTTP to localhost (Cloudflare handles SSL)
 print_info "Cloudflare Tunnel uses HTTP to localhost (SSL handled by Cloudflare)"
 
-# Create config.yml with multiple services
+# config.yml — ไม่ใส่ *.domain (ทำให้ PyYAML ผิดพลาดและ ingress สับสน)
+CREDENTIALS_FILE="/root/.cloudflared/${TUNNEL_ID}.json"
 cat > /etc/cloudflared/config.yml << CONFIG_EOF
 tunnel: ${TUNNEL_ID}
-credentials-file: /root/.cloudflared/${TUNNEL_ID}.json
-
-ingress:
-  # Main website
-  - hostname: ${DOMAIN_NAME}
-    service: http://localhost:80
-  - hostname: www.${DOMAIN_NAME}
-    service: http://localhost:80
-
-  # phpMyAdmin (optional - comment out if not needed)
-  - hostname: phpmyadmin.${DOMAIN_NAME}
-    service: http://localhost:8080
-
-  # Netdata monitoring (optional - comment out if not needed)
-  - hostname: netdata.${DOMAIN_NAME}
-    service: http://localhost:19999
-
-  # Uptime Kuma monitoring (optional - comment out if not needed)
-  - hostname: uptime.${DOMAIN_NAME}
-    service: http://localhost:3002
-
-  # Catch-all for other subdomains (optional)
-  - hostname: *.${DOMAIN_NAME}
-    service: http://localhost:80
-
-  # Final catch-all
-  - service: http_status:404
-CONFIG_EOF
-
-# Validate YAML syntax
-print_info "Validating config.yml syntax..."
-if command -v python3 &> /dev/null; then
-    if python3 -c "import yaml; yaml.safe_load(open('/etc/cloudflared/config.yml'))" 2>/dev/null; then
-        print_success "YAML syntax is valid"
-    else
-        print_error "❌ YAML syntax error in config.yml!"
-        print_info "Displaying config file content:"
-        echo "---"
-        cat /etc/cloudflared/config.yml
-        echo "---"
-        print_error "Please check the YAML formatting above"
-        print_info "Common YAML issues:"
-        echo "  - Missing spaces after colons (:)"
-        echo "  - Incorrect indentation (use 2 spaces, not tabs)"
-        echo "  - Missing quotes around special characters"
-        echo ""
-        print_info "Quick fix - Recreate config.yml:"
-        read -p "Recreate config.yml? (y/N): " RECREATE_CONFIG
-        if [[ "$RECREATE_CONFIG" =~ ^[Yy]$ ]]; then
-            print_info "Recreating config.yml..."
-            rm -f /etc/cloudflared/config.yml
-            # Recreate with proper formatting
-            cat > /etc/cloudflared/config.yml << CONFIG_EOF
-tunnel: ${TUNNEL_ID}
-credentials-file: /root/.cloudflared/${TUNNEL_ID}.json
+credentials-file: ${CREDENTIALS_FILE}
 
 ingress:
   - hostname: ${DOMAIN_NAME}
-    service: http://localhost:80
+    service: http://127.0.0.1:80
   - hostname: www.${DOMAIN_NAME}
-    service: http://localhost:80
+    service: http://127.0.0.1:80
   - service: http_status:404
 CONFIG_EOF
-            print_success "config.yml recreated with basic configuration"
-        else
-            exit 1
-        fi
-    fi
+chmod 644 /etc/cloudflared/config.yml
+
+print_info "Validating ingress..."
+if cloudflared tunnel --config /etc/cloudflared/config.yml ingress validate 2>/dev/null; then
+    print_success "ingress validate ผ่าน"
 else
-    print_warning "Python3 not found, skipping YAML validation"
+    print_warning "ลอง: cloudflared tunnel --config /etc/cloudflared/config.yml ingress validate"
+fi
+
+read -p "เพิ่ม subdomain (phpmyadmin/netdata/uptime) ใน config? (y/N): " ADD_SUBS
+if [[ "$ADD_SUBS" =~ ^[Yy]$ ]]; then
+    cat > /etc/cloudflared/config.yml << CONFIG_EOF
+tunnel: ${TUNNEL_ID}
+credentials-file: ${CREDENTIALS_FILE}
+
+ingress:
+  - hostname: ${DOMAIN_NAME}
+    service: http://127.0.0.1:80
+  - hostname: www.${DOMAIN_NAME}
+    service: http://127.0.0.1:80
+  - hostname: phpmyadmin.${DOMAIN_NAME}
+    service: http://127.0.0.1:8080
+  - hostname: netdata.${DOMAIN_NAME}
+    service: http://127.0.0.1:19999
+  - hostname: uptime.${DOMAIN_NAME}
+    service: http://127.0.0.1:3002
+  - service: http_status:404
+CONFIG_EOF
+    cloudflared tunnel --config /etc/cloudflared/config.yml ingress validate 2>/dev/null || true
 fi
 
 print_success "config.yml สร้างเรียบร้อย"
@@ -365,9 +341,11 @@ setup_dns() {
     fi
 }
 
-# Setup DNS for main domain
+# Setup DNS for main domain (ไม่หยุด script ถ้า DNS ล้มเหลว)
+set +e
 setup_dns "main" "$DOMAIN_NAME"
 setup_dns "www" "www.$DOMAIN_NAME"
+set -e
 
 # Ask if user wants to setup DNS for monitoring services
 echo ""
@@ -380,10 +358,25 @@ if [[ "$SETUP_MONITORING_DNS" =~ ^[Yy]$ ]]; then
     setup_dns "uptime" "uptime.$DOMAIN_NAME"
 fi
 
-print_success "DNS Routing ตั้งค่าเรียบร้อย"
+print_success "DNS Routing ตั้งค่าเรียบร้อย (หรือมี record อยู่แล้ว)"
 
 print_info "หมายเหตุ: Cloudflare จะสร้าง DNS Record แบบ Tunnel ให้อัตโนมัติ"
 print_info "ไม่ต้องใส่ IP บ้านใน DNS เพราะ Tunnel จะเชื่อมเอง"
+
+# ============================================
+# STEP 5b: Nginx สำหรับ Tunnel (HTTP บน :80 ไม่ redirect)
+# ============================================
+echo ""
+read -p "ตั้งค่า Nginx สำหรับ Cloudflare Tunnel (แนะนำ — แก้ 530 จาก redirect)? (Y/n): " SETUP_NGINX
+SETUP_NGINX=${SETUP_NGINX:-Y}
+if [[ "$SETUP_NGINX" =~ ^[Yy]$ ]]; then
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    if [ -f "$SCRIPT_DIR/setup-nginx-cloudflare.sh" ]; then
+        bash "$SCRIPT_DIR/setup-nginx-cloudflare.sh"
+    else
+        print_warning "ไม่พบ setup-nginx-cloudflare.sh — รันภายหลังจากโฟลเดอร์โปรเจกต์"
+    fi
+fi
 
 # ============================================
 # STEP 6: Install Tunnel as Service
@@ -666,6 +659,13 @@ echo "     1. ตรวจสอบ: curl -I http://localhost"
 echo "     2. เริ่ม nginx: systemctl start nginx"
 echo "     3. ตรวจสอบ docker: docker ps"
 echo "     4. ตรวจสอบ port: ss -tulpn | grep :80"
+echo ""
+print_info "❌ Error 530 บนเว็บ (Origin unreachable)"
+echo "   วิธีแก้เร็ว: sudo bash fix-cloudflare-tunnel-530.sh"
+echo "   ตรวจ: systemctl status cloudflared"
+echo "   ตรวจ: cloudflared tunnel list (ต้อง HEALTHY)"
+echo "   ตรวจ DNS: CNAME ชี้ ${TUNNEL_ID}.cfargotunnel.com"
+echo "   nginx :80 ต้องไม่ redirect — ใช้ setup-nginx-cloudflare.sh"
 echo ""
 print_info "คำสั่งตรวจสอบที่เป็นประโยชน์:"
 echo "  ls -la /root/.cloudflared/"
