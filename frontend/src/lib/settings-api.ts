@@ -1,5 +1,5 @@
 import api from './api';
-import axios from 'axios';
+import { getApiBaseUrl } from '@/lib/env';
 
 export interface Setting {
   id: number;
@@ -16,26 +16,16 @@ export interface SettingUpdate {
 }
 
 export const settingsApi = {
-  // Public endpoint - no auth required for LINE integration
   getPublic: async (): Promise<Record<string, string>> => {
-    const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api/v1';
-    // Ensure /api/v1 is included
-    const baseURL = API_URL.endsWith('/api/v1') ? API_URL : `${API_URL}/api/v1`;
-    const fullUrl = `${baseURL}/settings/public`;
-    console.log('[SettingsAPI] Fetching from:', fullUrl);
-    console.log('[SettingsAPI] Current window.location:', typeof window !== 'undefined' ? window.location.href : 'SSR');
-
     try {
-      const response = await axios.get(fullUrl, { timeout: 5000 });
-      console.log('[SettingsAPI] Response status:', response.status);
-      console.log('[SettingsAPI] Response data:', response.data);
+      const response = await api.get('/settings/public', { timeout: 5000 });
       return response.data;
-    } catch (error: any) {
-      console.error('[SettingsAPI] Error fetching settings:', error.message);
-      console.error('[SettingsAPI] Error status:', error.response?.status);
-      console.error('[SettingsAPI] Full URL that failed:', fullUrl);
-
-      // Return empty object as fallback
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      console.error(
+        `[SettingsAPI] Failed to load public settings from ${getApiBaseUrl()}:`,
+        message
+      );
       return {};
     }
   },

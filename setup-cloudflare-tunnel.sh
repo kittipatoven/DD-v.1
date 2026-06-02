@@ -3,7 +3,9 @@
 # DD Computer - Cloudflare Tunnel Setup Script
 # สำหรับตั้งค่า Cloudflare Tunnel เพื่อเปิดเว็บจากบ้านโดยไม่ต้อง Port Forwarding
 # หลักการ: Ubuntu เชื่อมออกไปหา Cloudflare → ไม่ต้อง Public IP / Port Forward / CGNAT
-# Usage: sudo bash setup-cloudflare-tunnel.sh
+# Usage:
+#   cd ~/DD-v.1 && sudo bash setup-cloudflare-tunnel.sh
+#   sudo NONINTERACTIVE=1 bash setup-cloudflare-tunnel.sh   # ใช้ tunnel เดิม ไม่ถาม
 
 set -euo pipefail
 
@@ -23,11 +25,158 @@ print_error() { echo -e "${RED}✗ $1${NC}"; }
 print_warning() { echo -e "${YELLOW}⚠ $1${NC}"; }
 print_info() { echo -e "${BLUE}ℹ $1${NC}"; }
 
+# ติดตั้ง cloudflared เป็น systemd service + ตรวจสอบ origin/HTTPS
+install_cloudflared_systemd_service() {
+    print_info "1) ติดตั้ง systemd service ของ cloudflared..."
+    if systemctl list-unit-files cloudflared.service 2>/dev/null | grep -q '^cloudflared.service'; then
+        print_info "พบ cloudflared.service แล้ว — อัปเดต unit จาก config ปัจจุบัน"
+        cloudflared service install 2>/dev/null || true
+    else
+        cloudflared service install
+    fi
+    print_success "cloudflared service install เสร็จ"
+
+    print_info "2) โหลด unit ใหม่ + เปิดใช้งาน..."
+    systemctl daemon-reload
+    systemctl enable cloudflared
+    systemctl start cloudflared
+
+    print_info "รอ service start (10 วินาที)..."
+    sleep 10
+
+    print_info "3) ตรวจสอบ cloudflared..."
+    systemctl status cloudflared --no-pager -l || true
+    echo ""
+    journalctl -u cloudflared -n 20 --no-pager || true
+    echo ""
+
+    if systemctl is-active --quiet cloudflared; then
+        print_success "cloudflared service: active ✅"
+        return 0
+    fi
+
+    print_error "cloudflared service ไม่ active"
+    journalctl -u cloudflared -n 50 --no-pager || true
+    return 1
+}
+
+verify_tunnel_connectivity() {
+    local domain="${1:-$DOMAIN_NAME}"
+
+    print_info "4) ตรวจ origin http://127.0.0.1:80/ (ต้องได้ 200 ไม่ใช่ 301)..."
+    local origin_code
+    origin_code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 http://127.0.0.1:80/ 2>/dev/null || echo "000")
+    print_info "   HTTP status: ${origin_code}"
+    curl -sI --max-time 10 http://127.0.0.1:80/ 2>/dev/null | head -8 || true
+    echo ""
+
+    case "$origin_code" in
+        200|404)
+            print_success "Origin ตอบสนอง ✅"
+            ;;
+        301|302)
+            print_warning "Origin redirect (${origin_code}) — รัน setup-nginx-cloudflare.sh"
+            ;;
+        *)
+            print_warning "Origin ไม่ปกติ (${origin_code}) — ตรวจ: systemctl status nginx && docker ps"
+            ;;
+    esac
+
+    print_info "5) ตรวจเว็บ https://${domain}/ (รอ 1–2 นาทีหลัง tunnel ขึ้น)..."
+    sleep 3
+    local https_code
+    https_code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 20 "https://${domain}/" 2>/dev/null || echo "000")
+    print_info "   HTTPS status: ${https_code}"
+    curl -sI --max-time 20 "https://${domain}/" 2>/dev/null | head -10 || true
+    echo ""
+
+    case "$https_code" in
+        200|301|302)
+            print_success "เว็บผ่าน Cloudflare ✅ (HTTP ${https_code})"
+            ;;
+        530)
+            print_error "ยังได้ 530 — ตรวจ Tunnel HEALTHY ใน Dashboard และ systemctl status cloudflared"
+            ;;
+        000)
+            print_warning "ไม่สามารถเชื่อม https://${domain} — ตรวจ DNS / รอ propagate"
+            ;;
+        *)
+            print_warning "HTTPS status ${https_code} — อาจต้องรอหรือตรวจ docker/backend"
+            ;;
+    esac
+}
+
 # Check root
 if [ "$EUID" -ne 0 ]; then
     print_error "Please run as root (use sudo)"
     exit 1
 fi
+
+# โฟลเดอร์โปรเจกต์ (รันได้จากที่ไหนก็ได้)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+NONINTERACTIVE="${NONINTERACTIVE:-0}"
+
+run_nginx_setup() {
+    if [ ! -f "$SCRIPT_DIR/setup-nginx-cloudflare.sh" ]; then
+        print_warning "ไม่พบ setup-nginx-cloudflare.sh"
+        return 1
+    fi
+    print_info "รัน setup-nginx-cloudflare.sh ..."
+    set +e
+    bash "$SCRIPT_DIR/setup-nginx-cloudflare.sh"
+    local rc=$?
+    set -e
+    if [ "$rc" -ne 0 ]; then
+        print_warning "nginx setup exit code $rc — ตรวจ: nginx -t && systemctl status nginx"
+    else
+        print_success "Nginx สำหรับ Tunnel พร้อม"
+    fi
+    return 0
+}
+
+ensure_docker_stack() {
+    if ! command -v docker &>/dev/null; then
+        print_warning "ไม่พบ docker — ข้ามการ start containers"
+        return 0
+    fi
+    if [ ! -f "$SCRIPT_DIR/docker-compose.prod.yml" ]; then
+        print_warning "ไม่พบ docker-compose.prod.yml"
+        return 0
+    fi
+    if [ ! -f "$SCRIPT_DIR/.env" ]; then
+        if [ -f "$SCRIPT_DIR/.env.production.example" ]; then
+            print_warning "ไม่พบ .env — copy จาก .env.production.example"
+            cp "$SCRIPT_DIR/.env.production.example" "$SCRIPT_DIR/.env"
+            print_info "แก้ไข .env แล้วรัน: nano $SCRIPT_DIR/.env"
+        else
+            print_warning "ไม่พบ .env — ข้าม docker compose up"
+            return 0
+        fi
+    fi
+    print_info "เริ่ม Docker stack (frontend + backend)..."
+    set +e
+    if docker compose -f "$SCRIPT_DIR/docker-compose.prod.yml" up -d frontend backend mysql 2>&1; then
+        print_success "Docker stack เริ่มแล้ว"
+    elif docker-compose -f "$SCRIPT_DIR/docker-compose.prod.yml" up -d frontend backend mysql 2>&1; then
+        print_success "Docker stack เริ่มแล้ว (docker-compose)"
+    else
+        print_warning "Docker up ล้มเหลว — ตรวจ: docker ps && cat .env"
+    fi
+    set -e
+    sleep 5
+}
+
+ensure_production_env_hints() {
+  if [ -f "$SCRIPT_DIR/.env" ]; then
+    if grep -q 'localhost' "$SCRIPT_DIR/.env" 2>/dev/null; then
+      print_warning ".env ยังมี localhost — แก้เป็น https://${DOMAIN_NAME} ก่อน rebuild frontend"
+      print_info "  NEXT_PUBLIC_API_URL=https://${DOMAIN_NAME}/api/v1"
+      print_info "  NEXT_PUBLIC_WS_URL=https://${DOMAIN_NAME}"
+      print_info "  API_URL=https://${DOMAIN_NAME}"
+    fi
+  fi
+}
 
 # ============================================
 # LOAD CONFIGURATION
@@ -37,16 +186,11 @@ echo "=========================================="
 echo "Loading Configuration"
 echo "=========================================="
 
-# Load external configuration if exists
-if [ -f ".env.deploy" ]; then
-    print_info "Loading configuration from .env.deploy"
-    set -a
-    source .env.deploy
-    set +a
-    print_success "Configuration loaded"
-else
-    print_info "No .env.deploy found, using defaults or prompts"
-fi
+set -a
+[ -f "$SCRIPT_DIR/.env" ] && source "$SCRIPT_DIR/.env"
+[ -f "$SCRIPT_DIR/.env.deploy" ] && source "$SCRIPT_DIR/.env.deploy"
+set +a
+print_success "โหลด config จาก $SCRIPT_DIR (.env / .env.deploy)"
 
 # Set domain (prompt if not set)
 DOMAIN_NAME="${DOMAIN_NAME:-ddcomputersamrong.com}"
@@ -146,16 +290,22 @@ echo "=========================================="
 echo "STEP 3: สร้าง Tunnel"
 echo "=========================================="
 
-read -p "ตั้งชื่อ Tunnel (ddcomputer-tunnel): " TUNNEL_NAME
-TUNNEL_NAME=${TUNNEL_NAME:-ddcomputer-tunnel}
+TUNNEL_NAME="${TUNNEL_NAME:-ddcomputer-tunnel}"
+if [ "$NONINTERACTIVE" != "1" ]; then
+    read -p "ตั้งชื่อ Tunnel (${TUNNEL_NAME}): " TUNNEL_INPUT
+    TUNNEL_NAME=${TUNNEL_INPUT:-$TUNNEL_NAME}
+fi
 
 # ใช้ tunnel เดิมถ้ามี (ลบเฉพาะเมื่อผู้ใช้ยืนยัน — ป้องกัน DNS 530 จาก tunnel ID เปลี่ยน)
 TUNNEL_ID=""
 if cloudflared tunnel list 2>/dev/null | grep -q "$TUNNEL_NAME"; then
     TUNNEL_ID=$(cloudflared tunnel list 2>/dev/null | awk -v n="$TUNNEL_NAME" '$0 ~ n {print $1}' | head -1)
     print_success "พบ Tunnel เดิม: $TUNNEL_NAME ($TUNNEL_ID)"
-    read -p "ใช้ tunnel เดิม? (Y/n): " USE_EXISTING
-    USE_EXISTING=${USE_EXISTING:-Y}
+    USE_EXISTING="Y"
+    if [ "$NONINTERACTIVE" != "1" ]; then
+        read -p "ใช้ tunnel เดิม? (Y/n): " USE_EXISTING
+        USE_EXISTING=${USE_EXISTING:-Y}
+    fi
     if [[ ! "$USE_EXISTING" =~ ^[Yy]$ ]]; then
         print_warning "ลบ tunnel เก่า..."
         cloudflared tunnel delete "$TUNNEL_NAME" || true
@@ -214,8 +364,11 @@ echo ""
 echo "SSL/HTTPS Configuration:"
 echo "1) HTTP only (no SSL)"
 echo "2) HTTPS (SSL termination at Cloudflare)"
-read -p "Select option (1-2, default: 2): " SSL_OPTION
-SSL_OPTION=${SSL_OPTION:-2}
+SSL_OPTION="${SSL_OPTION:-2}"
+if [ "$NONINTERACTIVE" != "1" ]; then
+    read -p "Select option (1-2, default: 2): " SSL_INPUT
+    SSL_OPTION=${SSL_INPUT:-2}
+fi
 
 # Create config directory
 mkdir -p /etc/cloudflared
@@ -245,7 +398,10 @@ else
     print_warning "ลอง: cloudflared tunnel --config /etc/cloudflared/config.yml ingress validate"
 fi
 
-read -p "เพิ่ม subdomain (phpmyadmin/netdata/uptime) ใน config? (y/N): " ADD_SUBS
+ADD_SUBS="${ADD_SUBS:-n}"
+if [ "$NONINTERACTIVE" != "1" ]; then
+    read -p "เพิ่ม subdomain (phpmyadmin/netdata/uptime) ใน config? (y/N): " ADD_SUBS
+fi
 if [[ "$ADD_SUBS" =~ ^[Yy]$ ]]; then
     cat > /etc/cloudflared/config.yml << CONFIG_EOF
 tunnel: ${TUNNEL_ID}
@@ -306,8 +462,12 @@ setup_dns() {
         echo "   cloudflared tunnel route dns $TUNNEL_NAME $full_domain"
         return 1
     # Check for specific error patterns
-    elif echo "$DNS_OUTPUT" | grep -q "already exists"; then
-        print_warning "DNS record for $full_domain already exists. Skipping..."
+    elif [ "$DNS_EXIT_CODE" -eq 0 ]; then
+        print_success "DNS OK สำหรับ $full_domain"
+        print_info "Output: $DNS_OUTPUT"
+        return 0
+    elif echo "$DNS_OUTPUT" | grep -qi "already exists\|already configured"; then
+        print_warning "DNS สำหรับ $full_domain ตั้งค่าแล้ว — ข้าม"
         return 0
     elif echo "$DNS_OUTPUT" | grep -q "error parsing YAML"; then
         print_error "❌ YAML parsing error in config.yml!"
@@ -324,7 +484,7 @@ setup_dns() {
         echo "3. หรือแก้ YAML ด้วยตนเอง:"
         echo "   nano /etc/cloudflared/config.yml"
         return 1
-    elif echo "$DNS_OUTPUT" | grep -q "failed to create DNS record\|error\|Error"; then
+    elif echo "$DNS_OUTPUT" | grep -qi "failed to create DNS record\|ERR \|error:"; then
         print_error "Failed to create DNS record for $full_domain"
         print_info "Error details:"
         echo "$DNS_OUTPUT"
@@ -349,8 +509,10 @@ set -e
 
 # Ask if user wants to setup DNS for monitoring services
 echo ""
-read -p "Setup DNS for monitoring services (phpmyadmin, netdata, uptime)? (y/N): " SETUP_MONITORING_DNS
-SETUP_MONITORING_DNS=${SETUP_MONITORING_DNS:-n}
+SETUP_MONITORING_DNS="${SETUP_MONITORING_DNS:-n}"
+if [ "$NONINTERACTIVE" != "1" ]; then
+    read -p "Setup DNS for monitoring services (phpmyadmin, netdata, uptime)? (y/N): " SETUP_MONITORING_DNS
+fi
 
 if [[ "$SETUP_MONITORING_DNS" =~ ^[Yy]$ ]]; then
     setup_dns "phpmyadmin" "phpmyadmin.$DOMAIN_NAME"
@@ -364,18 +526,34 @@ print_info "หมายเหตุ: Cloudflare จะสร้าง DNS Recor
 print_info "ไม่ต้องใส่ IP บ้านใน DNS เพราะ Tunnel จะเชื่อมเอง"
 
 # ============================================
-# STEP 5b: Nginx สำหรับ Tunnel (HTTP บน :80 ไม่ redirect)
+# STEP 5b: Nginx + Docker (ต้องมาก่อน cloudflared — origin :80 ต้องพร้อม)
 # ============================================
 echo ""
-read -p "ตั้งค่า Nginx สำหรับ Cloudflare Tunnel (แนะนำ — แก้ 530 จาก redirect)? (Y/n): " SETUP_NGINX
-SETUP_NGINX=${SETUP_NGINX:-Y}
-if [[ "$SETUP_NGINX" =~ ^[Yy]$ ]]; then
-    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    if [ -f "$SCRIPT_DIR/setup-nginx-cloudflare.sh" ]; then
-        bash "$SCRIPT_DIR/setup-nginx-cloudflare.sh"
-    else
-        print_warning "ไม่พบ setup-nginx-cloudflare.sh — รันภายหลังจากโฟลเดอร์โปรเจกต์"
-    fi
+echo "=========================================="
+echo "STEP 5b: Nginx + Docker (Origin)"
+echo "=========================================="
+
+ensure_production_env_hints
+
+RUN_NGINX="Y"
+RUN_DOCKER="Y"
+if [ "$NONINTERACTIVE" != "1" ]; then
+    read -p "ตั้งค่า Nginx สำหรับ Tunnel? (Y/n): " RUN_NGINX
+    RUN_NGINX=${RUN_NGINX:-Y}
+    read -p "เริ่ม Docker (frontend/backend)? (Y/n): " RUN_DOCKER
+    RUN_DOCKER=${RUN_DOCKER:-Y}
+fi
+
+if [[ "$RUN_NGINX" =~ ^[Yy]$ ]]; then
+    run_nginx_setup
+else
+    print_info "ข้าม Nginx — ต้องมี config ที่ :80 ไม่ redirect ไป HTTPS"
+fi
+
+if [[ "$RUN_DOCKER" =~ ^[Yy]$ ]]; then
+    ensure_docker_stack
+else
+    print_info "ข้าม Docker — ต้องมี service บน :3000 และ :3001"
 fi
 
 # ============================================
@@ -412,7 +590,7 @@ if [ "$CLOUDFLARED_PERMS" != "700" ]; then
     print_warning "Permissions ของ /root/.cloudflared ไม่ถูกต้อง: $CLOUDFLARED_PERMS"
     print_info "กำลังแก้ permissions เป็น 700..."
     chmod 700 /root/.cloudflared
-    chmod 600 /root/.cloudflared/*
+    chmod 600 /root/.cloudflared/* 2>/dev/null || true
     print_success "Permissions แก้ไขเรียบร้อย"
 fi
 
@@ -450,70 +628,23 @@ else
     fi
 fi
 
-# Install as service using the config file
-print_info "กำลังติดตั้ง cloudflared service..."
-cloudflared service install
-
-print_success "Service ติดตั้งเรียบร้อย"
-
-# Start service with timeout handling
-print_info "กำลังเริ่ม service..."
-systemctl start cloudflared
-
-# Wait for service to start and check status
-print_info "รอ service start (10 วินาที)..."
-sleep 10
-
-# Check service status
-SERVICE_STATUS=$(systemctl is-active cloudflared 2>&1)
-if [ "$SERVICE_STATUS" = "active" ]; then
-    print_success "Service เริ่มทำงานแล้ว ✅"
-else
-    print_error "❌ Service ไม่สามารถ start ได้!"
-    print_error "Status: $SERVICE_STATUS"
-    echo ""
-    print_info "ตรวจสอบ service status รายละเอียด:"
-    systemctl status cloudflared.service --no-pager -l
-    echo ""
-    print_info "ตรวจสอบ logs:"
-    journalctl -xeu cloudflared.service --no-pager -n 50
+# ติดตั้ง + enable + start + ตรวจสอบ service
+if ! install_cloudflared_systemd_service; then
+    print_error "❌ ติดตั้ง/เริ่ม cloudflared service ไม่สำเร็จ"
     echo ""
     print_info "สาเหตุที่เป็นไปได้และวิธีแก้:"
-    echo ""
-    echo "1) Config file ไม่ถูกต้องหรือไม่พบ"
-    echo "   ตรวจสอบ: cat /etc/cloudflared/config.yml"
-    echo "   ตรวจสอบ: ls -la /etc/cloudflared/"
-    echo "   แก้: ลบ config และรัน script ใหม่"
-    echo ""
-    echo "2) Credentials file ไม่พบ"
-    echo "   ตรวจสอบ: ls -la /root/.cloudflared/${TUNNEL_ID}.json"
-    echo "   แก้: สร้าง tunnel ใหม่"
-    echo ""
-    echo "3) Permissions ไม่ถูกต้อง"
-    echo "   ตรวจสอบ: ls -la /root/.cloudflared/"
-    echo "   ตรวจสอบ: ls -la /etc/cloudflared/"
-    echo "   แก้: chmod 700 /root/.cloudflared && chmod 600 /root/.cloudflared/*"
-    echo "        chmod 755 /etc/cloudflared && chmod 644 /etc/cloudflared/config.yml"
-    echo ""
-    echo "4) Origin service ไม่ทำงาน"
-    echo "   ตรวจสอบ: curl -I http://localhost"
-    echo "   แก้: เริ่ม nginx หรือ docker containers"
-    echo ""
-    echo "5) YAML syntax error"
-    echo "   ตรวจสอบ: cloudflared tunnel ingress validate"
-    echo "   แก้: แก้ไข config.yml หรือสร้างใหม่"
-    echo ""
-    print_info "ทดสอบ manual:"
-    echo "  cloudflared tunnel run $TUNNEL_NAME"
-    echo "  หรือ"
-    echo "  cloudflared tunnel --config /root/.cloudflared/config.yml run"
-    echo ""
+    echo "  cat /etc/cloudflared/config.yml"
+    echo "  ls -la /root/.cloudflared/${TUNNEL_ID}.json"
+    echo "  cloudflared tunnel --config /etc/cloudflared/config.yml ingress validate"
+    echo "  cloudflared tunnel --config /etc/cloudflared/config.yml run ${TUNNEL_NAME}"
     exit 1
 fi
+print_success "Service ถูกตั้งค่าให้ start อัตโนมัติ (systemctl enable)"
 
-# Enable service
-systemctl enable cloudflared
-print_success "Service ถูกตั้งค่าให้ start อัตโนมัติ"
+# รีสตาร์ท nginx หลัง tunnel ขึ้น (กัน 502 ชั่วคราว)
+if systemctl is-active --quiet nginx; then
+    systemctl reload nginx 2>/dev/null || true
+fi
 
 # ============================================
 # STEP 7: Check Service Status
@@ -526,22 +657,32 @@ echo "=========================================="
 sudo systemctl status cloudflared
 
 # ============================================
-# STEP 8: Test Connection
+# STEP 8: ทดสอบ Origin + HTTPS
 # ============================================
 echo ""
 echo "=========================================="
-echo "STEP 8: ทดสอบการเชื่อมต่อ"
+echo "STEP 8: ทดสอบ Origin + HTTPS"
 echo "=========================================="
 
-print_info "รอสักครู่ให้ tunnel เริ่มทำงาน..."
-sleep 5
+verify_tunnel_connectivity "$DOMAIN_NAME"
 
-print_info "ทดสอบเข้า localhost..."
-if curl -s -o /dev/null -w "%{http_code}" http://localhost:80 | grep -q "200"; then
-    print_success "Nginx ทำงานบน localhost:80 ✅"
+print_info "ทดสอบ API ผ่าน Nginx (same-origin)..."
+API_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "http://127.0.0.1/api/v1/health" 2>/dev/null || echo "000")
+print_info "   /api/v1/health → HTTP ${API_CODE}"
+if [ "$API_CODE" = "200" ]; then
+    print_success "API health ผ่าน Nginx ✅"
 else
-    print_error "Nginx ไม่ทำงานบน localhost:80 ❌"
-    print_info "ตรวจสอบ: sudo systemctl status nginx"
+    print_warning "API health ไม่ได้ 200 — ตรวจ docker/backend และ nginx location /api/"
+fi
+
+# ถ้ายัง 530 ลองสคริปต์แก้ด่วน
+if curl -s -o /dev/null -w "%{http_code}" --max-time 15 "https://${DOMAIN_NAME}/" 2>/dev/null | grep -q "530"; then
+    if [ -f "$SCRIPT_DIR/fix-cloudflare-tunnel-530.sh" ]; then
+        print_warning "ยังได้ 530 — รัน fix-cloudflare-tunnel-530.sh ..."
+        set +e
+        bash "$SCRIPT_DIR/fix-cloudflare-tunnel-530.sh"
+        set -e
+    fi
 fi
 
 # ============================================
@@ -592,6 +733,13 @@ print_warning "  ตรวจสอบ nginx: systemctl status nginx"
 print_warning "  ตรวจสอบ cloudflared: systemctl status cloudflared"
 print_warning "  รอ DNS propagate (5-15 นาที)"
 print_warning "  ตรวจสอบ config: cat /etc/cloudflared/config.yml"
+echo ""
+print_info "Rebuild frontend (ไม่ต้อง npm บน host):"
+echo "  cd $SCRIPT_DIR && docker compose -f docker-compose.prod.yml build frontend --no-cache"
+echo "  docker compose -f docker-compose.prod.yml up -d frontend"
+echo ""
+print_info "รันซ้ำแบบไม่ถาม (ใช้ tunnel เดิม):"
+echo "  cd $SCRIPT_DIR && sudo NONINTERACTIVE=1 bash setup-cloudflare-tunnel.sh"
 
 echo ""
 echo "=========================================="

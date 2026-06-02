@@ -1,6 +1,7 @@
 import api from './api';
 import axios from 'axios';
 import { useAuthStore } from '@/store/auth-store';
+import { getApiBaseUrl } from '@/lib/env';
 
 export interface Product {
   id: number;
@@ -86,12 +87,8 @@ export const productApi = {
 
     try {
       // Get base API URL without /api/v1 suffix for upload endpoint
-      const rawApiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api/v1';
-      const baseUrl = rawApiUrl.replace(/\/api\/v1\/?$/, ''); // Remove /api/v1 if present
-
-      // Create a separate axios instance for upload to avoid default Content-Type
       const uploadApi = axios.create({
-        baseURL: `${baseUrl}/api/v1`,
+        baseURL: getApiBaseUrl(),
         headers: {
           // Don't set Content-Type - let browser set it to multipart/form-data automatically
         },

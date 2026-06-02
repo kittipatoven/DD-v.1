@@ -9,6 +9,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { extname } from 'path';
 import { join } from 'path';
+import { getUploadUrl } from '../common/public-url';
 
 @Controller('products')
 export class ProductsController {
@@ -157,7 +158,7 @@ export class ProductsController {
       const result = {
         filename: file.filename,
         originalname: file.originalname,
-        url: `${process.env.API_URL || 'http://localhost:3001'}/uploads/${file.filename}`,
+        url: getUploadUrl(`/uploads/${file.filename}`),
       };
       
       console.log('[BACKEND DEBUG] Returning result:', result);

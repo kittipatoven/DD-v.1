@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { io, Socket } from 'socket.io-client';
 import { Conversation, Message, chatApi } from '@/lib/chat-api';
+import { getWsUrl } from '@/lib/env';
 
 interface ChatState {
   conversations: Conversation[];
@@ -27,8 +28,6 @@ interface ChatState {
   loadConversationMessages: (conversationId: number) => Promise<void>;
 }
 
-const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'http://localhost:3001';
-
 export const useChatStore = create<ChatState>((set, get) => ({
   conversations: [],
   currentConversation: null,
@@ -46,7 +45,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   addMessage: (message) => set((state) => ({ messages: [...state.messages, message] })),
 
   connectSocket: () => {
-    const socket = io(WS_URL, {
+    const socket = io(getWsUrl(), {
       transports: ['websocket'],
     });
 

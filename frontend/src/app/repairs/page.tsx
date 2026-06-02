@@ -83,11 +83,6 @@ export default function RepairsPage() {
     }
   };
 
-  const getImageUrl = (url: string) => {
-    if (url.startsWith('http')) return url;
-    return `http://localhost:3001${url}`;
-  };
-
   return (
     <div className="min-h-screen bg-slate-900">
       <Navbar />

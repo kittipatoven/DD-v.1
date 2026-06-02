@@ -1,6 +1,7 @@
 import api from './api';
 import axios from 'axios';
 import { useAuthStore } from '@/store/auth-store';
+import { getApiBaseUrl } from '@/lib/env';
 
 export interface Repair {
   id: number;
@@ -88,11 +89,8 @@ export const repairApi = {
     });
 
     try {
-      const rawApiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api/v1';
-      const baseUrl = rawApiUrl.replace(/\/api\/v1\/?$/, '');
-
       const uploadApi = axios.create({
-        baseURL: `${baseUrl}/api/v1`,
+        baseURL: getApiBaseUrl(),
       });
 
       const authStore = useAuthStore.getState();

@@ -9,6 +9,7 @@ import { FilesInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { extname } from 'path';
 import { join } from 'path';
+import { getUploadUrl } from '../common/public-url';
 
 @Controller('repairs')
 export class RepairsController {
@@ -77,7 +78,7 @@ export class RepairsController {
     }
 
     const imageUrls = files.map(file => 
-      `${process.env.API_URL || 'http://localhost:3001'}/uploads/repairs/${file.filename}`
+      getUploadUrl(`/uploads/repairs/${file.filename}`)
     );
 
     const { RepairImageType } = require('./entities/repair-image.entity');

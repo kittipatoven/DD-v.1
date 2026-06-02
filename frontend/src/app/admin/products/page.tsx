@@ -200,8 +200,6 @@ export default function AdminProductsPage() {
     const imageFiles = files.filter(file => file.type.startsWith('image/'));
     console.log('[DEBUG] Filtered image files:', imageFiles);
 
-    const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-
     for (const file of imageFiles) {
       try {
         console.log('[DEBUG] Uploading file:', file.name);
@@ -245,26 +243,6 @@ export default function AdminProductsPage() {
   const handleLogout = () => {
     logout(); // Fire-and-forget
     window.location.href = '/login';
-  };
-
-  const getImageUrl = (img?: string) => {
-    if (!img) return null;
-
-    // If already a full URL, return as-is
-    if (img.startsWith('http')) {
-      // Reject fake URLs
-      if (img.includes('example.com') || img.includes('fake') || img.includes('test')) {
-        console.warn('[DEBUG ADMIN] Rejecting fake URL:', img);
-        return null;
-      }
-      return img;
-    }
-
-    // If it's a path, prepend BASE_URL
-    const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-    const fullUrl = `${BASE_URL}${img}`;
-    console.log('[DEBUG ADMIN] getImageUrl:', { img, fullUrl });
-    return fullUrl;
   };
 
   if (loading) {

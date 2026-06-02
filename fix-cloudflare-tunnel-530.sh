@@ -116,21 +116,50 @@ else
   ok "origin ตอบสนอง (code $HTTP_CODE)"
 fi
 
-# --- 5) cloudflared service ---
-info "ติดตั้ง/รีสตาร์ท cloudflared service..."
-cloudflared service install 2>/dev/null || true
-systemctl daemon-reload
-systemctl enable cloudflared 2>/dev/null || true
-systemctl restart cloudflared
-sleep 5
-
-if systemctl is-active --quiet cloudflared; then
-  ok "cloudflared active"
+# --- 5) cloudflared systemd service ---
+info "1) ติดตั้ง systemd service ของ cloudflared..."
+if ! systemctl list-unit-files cloudflared.service 2>/dev/null | grep -q cloudflared.service; then
+  cloudflared service install
 else
+  info "มี cloudflared.service อยู่แล้ว — ข้าม install"
+fi
+
+info "2) โหลด unit ใหม่ + เปิดใช้งาน..."
+systemctl daemon-reload
+systemctl enable cloudflared
+systemctl restart cloudflared
+sleep 10
+
+info "3) ตรวจสอบ cloudflared..."
+systemctl status cloudflared --no-pager -l || true
+echo ""
+journalctl -u cloudflared -n 20 --no-pager || true
+echo ""
+
+if ! systemctl is-active --quiet cloudflared; then
   err "cloudflared ไม่ active"
-  journalctl -u cloudflared -n 40 --no-pager
+  journalctl -u cloudflared -n 50 --no-pager
   exit 1
 fi
+ok "cloudflared active"
+
+info "4) ตรวจ origin http://127.0.0.1:80/ ..."
+ORIGIN_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 http://127.0.0.1:80/ 2>/dev/null || echo "000")
+info "HTTP status: $ORIGIN_CODE"
+curl -sI --max-time 10 http://127.0.0.1:80/ 2>/dev/null | head -8 || true
+echo ""
+
+info "5) ตรวจเว็บ https://${DOMAIN_NAME}/ ..."
+sleep 3
+HTTPS_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 20 "https://${DOMAIN_NAME}/" 2>/dev/null || echo "000")
+info "HTTPS status: $HTTPS_CODE"
+curl -sI --max-time 20 "https://${DOMAIN_NAME}/" 2>/dev/null | head -10 || true
+
+case "$HTTPS_CODE" in
+  200|301|302) ok "เว็บตอบจาก Cloudflare ($HTTPS_CODE)" ;;
+  530) err "ยังได้ 530 — ตรวจ Tunnel HEALTHY ใน Dashboard" ;;
+  *) warn "HTTPS $HTTPS_CODE — รอ DNS หรือตรวจ docker/nginx" ;;
+esac
 
 # --- 6) สรุป ---
 echo ""
@@ -140,7 +169,9 @@ echo "  • Zero Trust / Tunnels → $TUNNEL_NAME → Status: HEALTHY"
 echo "  • DNS → CNAME $DOMAIN_NAME → ${TUNNEL_ID}.cfargotunnel.com (proxied)"
 echo "  • SSL/TLS → Overview → Flexible หรือ Full (origin เป็น HTTP :80)"
 echo ""
-info "ทดสอบ (รอ 1–2 นาที):"
-echo "  curl -I https://${DOMAIN_NAME}/"
+info "คำสั่งตรวจซ้ำ:"
+echo "  systemctl status cloudflared"
 echo "  journalctl -u cloudflared -f"
+echo "  curl -I http://127.0.0.1:80/"
+echo "  curl -I https://${DOMAIN_NAME}/"
 echo "=========================================="

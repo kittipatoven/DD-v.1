@@ -6,6 +6,7 @@ import { Eye, Flame, MessageCircle, Share2 } from 'lucide-react';
 import { Product } from '@/lib/product-api';
 import { settingsApi } from '@/lib/settings-api';
 import ProductImage from '@/components/ProductImage';
+import { getSiteUrl } from '@/lib/env';
 
 interface ProductCardProps {
   product: Product;
@@ -48,9 +49,7 @@ export default function ProductCard({ product }: ProductCardProps) {
 
   const handleShare = (e: React.MouseEvent) => {
     e.stopPropagation();
-    const siteUrl =
-      process.env.NEXT_PUBLIC_SITE_URL ||
-      (typeof window !== 'undefined' ? window.location.origin : '');
+    const siteUrl = getSiteUrl();
     const shareUrl = `${siteUrl}/products/${product.id}`;
     const shareText = `ดูสินค้า: ${product.name} ราคา ฿${parseFloat(product.price).toLocaleString()} ${shareUrl}`;
     window.open(`https://line.me/R/msg/text/?${encodeURIComponent(shareText)}`, '_blank');

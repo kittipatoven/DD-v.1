@@ -4,7 +4,8 @@
 # สำหรับตั้งค่า Nginx และ Cloudflare Tunnel ให้ทำงานอัตโนมัติทุกครั้งที่บูต
 # Usage: sudo bash setup-nginx-cloudflare.sh
 
-set -e
+# ไม่ใช้ set -e — บางขั้น (cloudflared unit) อาจยังไม่มีตอนรันก่อน service install
+set -uo pipefail
 
 echo "=========================================="
 echo "DD Computer - Nginx & Cloudflare Setup"
@@ -153,12 +154,12 @@ echo "STEP 2: เปิดใช้งาน Nginx Config"
 echo "=========================================="
 
 print_info "ลบ config เก่า..."
-sudo rm -f /etc/nginx/sites-enabled/default
-sudo rm -f /etc/nginx/sites-enabled/ddcomputer
-sudo rm -f /etc/nginx/sites-enabled/ddcomputer-ip
+rm -f /etc/nginx/sites-enabled/default
+rm -f /etc/nginx/sites-enabled/ddcomputer
+rm -f /etc/nginx/sites-enabled/ddcomputer-ip
 
 print_info "สร้าง symlink ใหม่..."
-sudo ln -sf /etc/nginx/sites-available/ddcomputersamrong /etc/nginx/sites-enabled/ddcomputersamrong
+ln -sf /etc/nginx/sites-available/ddcomputersamrong /etc/nginx/sites-enabled/ddcomputersamrong
 
 print_success "เปิดใช้งาน nginx config เรียบร้อย"
 
@@ -171,8 +172,10 @@ echo "STEP 3: ทดสอบ Nginx Config"
 echo "=========================================="
 
 print_info "ทดสอบ nginx config..."
-sudo nginx -t
-
+if ! nginx -t; then
+    print_error "nginx config ไม่ถูกต้อง"
+    exit 1
+fi
 print_success "Nginx config ถูกต้อง"
 
 # ============================================
@@ -184,9 +187,14 @@ echo "STEP 4: Reload Nginx"
 echo "=========================================="
 
 print_info "Reload nginx..."
-sudo systemctl reload nginx
+systemctl enable nginx 2>/dev/null || true
+systemctl restart nginx 2>/dev/null || systemctl reload nginx 2>/dev/null || true
 
-print_success "Nginx reload เรียบร้อย"
+if systemctl is-active --quiet nginx; then
+    print_success "Nginx reload เรียบร้อย"
+else
+    print_warning "Nginx อาจยังไม่ active — ตรวจ: systemctl status nginx"
+fi
 
 # ============================================
 # STEP 5: Enable Nginx on Boot
@@ -196,23 +204,34 @@ echo "=========================================="
 echo "STEP 5: เปิดใช้งาน Nginx อัตโนมัติ"
 echo "=========================================="
 
-print_info "Enable nginx service..."
-sudo systemctl enable nginx
-
 print_success "Nginx เปิดใช้งานอัตโนมัติเรียบร้อย"
 
 # ============================================
-# STEP 6: Enable Cloudflared on Boot
+# STEP 6: Enable Cloudflared on Boot (ถ้ามี unit แล้ว)
 # ============================================
 echo ""
 echo "=========================================="
 echo "STEP 6: เปิดใช้งาน Cloudflared อัตโนมัติ"
 echo "=========================================="
 
-print_info "Enable cloudflared service..."
-sudo systemctl enable cloudflared
-
-print_success "Cloudflared เปิดใช้งานอัตโนมัติเรียบร้อย"
+if systemctl list-unit-files cloudflared.service 2>/dev/null | grep -q cloudflared.service; then
+    print_info "1) cloudflared service install (มี unit แล้ว — ข้าม)"
+    print_info "2) systemctl daemon-reload && enable && start..."
+    systemctl daemon-reload
+    systemctl enable cloudflared 2>/dev/null || true
+    systemctl restart cloudflared 2>/dev/null || true
+    sleep 5
+    print_info "3) systemctl status cloudflared"
+    systemctl status cloudflared --no-pager -l || true
+    journalctl -u cloudflared -n 10 --no-pager 2>/dev/null || true
+    print_success "Cloudflared เปิดใช้งานแล้ว"
+else
+    print_warning "ยังไม่มี cloudflared.service"
+    print_info "รันจาก setup-cloudflare-tunnel.sh Step 6 หรือ:"
+    echo "  sudo cloudflared service install"
+    echo "  sudo systemctl daemon-reload"
+    echo "  sudo systemctl enable --now cloudflared"
+fi
 
 # ============================================
 # STEP 7: Check Services Status
@@ -223,11 +242,15 @@ echo "STEP 7: เช็คสถานะ Services"
 echo "=========================================="
 
 print_info "สถานะ Nginx:"
-sudo systemctl status nginx --no-pager
+systemctl status nginx --no-pager || true
 
 echo ""
-print_info "สถานะ Cloudflared:"
-sudo systemctl status cloudflared --no-pager
+if systemctl list-unit-files cloudflared.service 2>/dev/null | grep -q cloudflared.service; then
+    print_info "สถานะ Cloudflared:"
+    systemctl status cloudflared --no-pager || true
+else
+    print_info "Cloudflared: ยังไม่ได้ติดตั้งเป็น systemd service"
+fi
 
 # ============================================
 # STEP 8: Test Local Connection
