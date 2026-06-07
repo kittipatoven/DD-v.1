@@ -572,14 +572,63 @@ if [ ! -f "/root/.cloudflared/${TUNNEL_ID}.json" ]; then
     echo "  - Tunnel ถูกสร้างแต่ credentials file ไม่ถูกสร้าง"
     echo "  - Credentials file ถูกลบหรือย้าย"
     echo ""
-    print_info "วิธีแก้ไข:"
-    echo "  1. ตรวจสอบไฟล์ทั้งหมดใน /root/.cloudflared/:"
-    echo "     ls -la /root/.cloudflared/"
-    echo "  2. ถ้าไม่มี credentials file ให้สร้าง tunnel ใหม่:"
-    echo "     cloudflared tunnel delete $TUNNEL_NAME"
-    echo "     cloudflared tunnel create $TUNNEL_NAME"
-    echo "  3. หรือคัดลอกจากที่อื่นถ้ามีสำรอง"
-    exit 1
+    print_info "กำลังแก้ไขอัตโนมัติ - สร้าง tunnel ใหม่..."
+
+    # Check if tunnel exists in Cloudflare
+    if cloudflared tunnel list 2>/dev/null | grep -q "$TUNNEL_NAME"; then
+        print_info "พบ tunnel เก่าใน Cloudflare - กำลังลบ..."
+        cloudflared tunnel delete "$TUNNEL_NAME" || true
+        sleep 2
+    fi
+
+    # Verify certificate exists before creating new tunnel
+    if [ ! -f "/root/.cloudflared/cert.pem" ]; then
+        print_error "❌ Certificate หายไป - ต้อง authenticate ใหม่"
+        print_info "กำลัง authenticate..."
+        sudo cloudflared tunnel login
+        if [ ! -f "/root/.cloudflared/cert.pem" ]; then
+            print_error "❌ Authentication ล้มเหลว!"
+            exit 1
+        fi
+    fi
+
+    # Create new tunnel
+    print_info "กำลังสร้าง tunnel ใหม่: $TUNNEL_NAME"
+    TUNNEL_OUTPUT=$(cloudflared tunnel create "$TUNNEL_NAME" 2>&1)
+    TUNNEL_ID=$(echo "$TUNNEL_OUTPUT" | grep -oE '[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}' | head -1)
+
+    if [ -z "$TUNNEL_ID" ]; then
+        print_error "❌ สร้าง tunnel ใหม่ล้มเหลว!"
+        print_error "Output: $TUNNEL_OUTPUT"
+        exit 1
+    fi
+
+    print_success "สร้าง tunnel ใหม่สำเร็จ: $TUNNEL_ID ($TUNNEL_NAME)"
+
+    # Update config.yml with new tunnel ID
+    print_info "กำลังอัปเดต config.yml ด้วย tunnel ID ใหม่..."
+    CREDENTIALS_FILE="/root/.cloudflared/${TUNNEL_ID}.json"
+    cat > /etc/cloudflared/config.yml << CONFIG_EOF
+tunnel: ${TUNNEL_ID}
+credentials-file: ${CREDENTIALS_FILE}
+
+ingress:
+  - hostname: ${DOMAIN_NAME}
+    service: http://127.0.0.1:80
+  - hostname: www.${DOMAIN_NAME}
+    service: http://127.0.0.1:80
+  - service: http_status:404
+CONFIG_EOF
+    chmod 644 /etc/cloudflared/config.yml
+
+    # Re-setup DNS for new tunnel
+    print_info "กำลังตั้งค่า DNS ใหม่..."
+    set +e
+    setup_dns "main" "$DOMAIN_NAME"
+    setup_dns "www" "www.$DOMAIN_NAME"
+    set -e
+
+    print_success "Credentials file และ config อัปเดตเรียบร้อย"
 fi
 print_success "Credentials file พร้อมใช้งาน"
 

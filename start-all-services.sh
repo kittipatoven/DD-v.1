@@ -108,12 +108,18 @@ server {
     # Client body size limit (for file uploads)
     client_max_body_size 50M;
 
-    # Uploads directory (static files from backend)
-    location /uploads/ {
-        alias /var/www/ddcomputer/backend/uploads/;
+    # Uploads - Proxy to backend
+    location ^~ /uploads/ {
+        proxy_pass http://backend;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        
+        # Cache static files
         expires 30d;
         add_header Cache-Control "public, immutable";
-        autoindex off;
     }
 
     # API Routes - Backend

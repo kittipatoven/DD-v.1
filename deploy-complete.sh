@@ -646,7 +646,7 @@ server {
     }
 
     # Uploads - Proxy to backend
-    location /uploads/ {
+    location ^~ /uploads/ {
         proxy_pass http://localhost:3001;
         proxy_http_version 1.1;
         proxy_set_header Host \$host;
@@ -756,7 +756,7 @@ server {
     }
 
     # Uploads - Proxy to backend
-    location /uploads/ {
+    location ^~ /uploads/ {
         proxy_pass http://localhost:3001;
         proxy_http_version 1.1;
         proxy_set_header Host \$host;
@@ -835,7 +835,7 @@ server {
     }
 
     # Uploads - Proxy to backend
-    location /uploads/ {
+    location ^~ /uploads/ {
         proxy_pass http://localhost:3001;
         proxy_http_version 1.1;
         proxy_set_header Host $host;

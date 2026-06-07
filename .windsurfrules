@@ -120,6 +120,9 @@ Your task is to maintain, debug, refactor, and deploy a **Chat Commerce Platform
 * Use DTO validation (class-validator)
 * Use Guards for auth
 * Use Interceptors for logging
+* Enable Swagger/OpenAPI documentation for all controllers
+* Use a global Exception Filter to format all error responses consistently
+* Maintain a standard JSON response structure (e.g., `{ success: true, data: ..., message: ... }`)
 
 ---
 
@@ -140,6 +143,8 @@ Your task is to maintain, debug, refactor, and deploy a **Chat Commerce Platform
 * Store messages in DB
 * Update unread count
 * Emit real-time events
+* Check authentication (JWT) on Socket.IO handshake
+* Use Socket.IO Redis Adapter when horizontal scaling is required
 
 ---
 
@@ -152,6 +157,8 @@ Your task is to maintain, debug, refactor, and deploy a **Chat Commerce Platform
   * FULLTEXT (products)
   * foreign keys
   * frequently queried columns
+* Use database migrations (TypeORM migrations) for schema changes in production
+* Configure connection pooling (max, min, idleTimeout) appropriate for VPS specs
 
 ## DO:
 
@@ -168,6 +175,8 @@ Your task is to maintain, debug, refactor, and deploy a **Chat Commerce Platform
 * JWT authentication
 * Rate limit login
 * Validate all inputs
+* Validate all environment variables on application startup using ConfigService/Joi/Zod
+* Implement rate limiting (Throttler) for public API endpoints
 
 ## DO NOT:
 

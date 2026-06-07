@@ -6,6 +6,8 @@ import { ProductImage } from './entities/product-image.entity';
 import { ProductView } from './entities/product-view.entity';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
+import { join } from 'path';
+import * as fs from 'fs';
 
 @Injectable()
 export class ProductsService {
@@ -17,6 +19,24 @@ export class ProductsService {
     @InjectRepository(ProductView)
     private productViewRepository: Repository<ProductView>,
   ) {}
+
+  private validateImageUrls(imageUrls: string[]): string[] {
+    const uploadsDir = join(process.cwd(), 'uploads');
+    const validUrls: string[] = [];
+
+    for (const url of imageUrls) {
+      const filename = url.split('/').pop();
+      const filePath = join(uploadsDir, filename);
+
+      if (fs.existsSync(filePath)) {
+        validUrls.push(url);
+      } else {
+        console.warn(`Image file does not exist: ${filename}`);
+      }
+    }
+
+    return validUrls;
+  }
 
   async create(createProductDto: CreateProductDto, userId: number): Promise<Product> {
     const { image_urls, ...productData } = createProductDto;
@@ -39,7 +59,8 @@ export class ProductsService {
     const savedProduct = await this.productsRepository.save(product);
 
     if (image_urls && image_urls.length > 0) {
-      const images = image_urls.map((url) =>
+      const validUrls = this.validateImageUrls(image_urls);
+      const images = validUrls.map((url) =>
         this.productImagesRepository.create({
           image_url: url,
           product_id: savedProduct.id,
@@ -160,7 +181,8 @@ export class ProductsService {
 
       // Add new images
       if (image_urls && image_urls.length > 0) {
-        const images = image_urls.map((url) =>
+        const validUrls = this.validateImageUrls(image_urls);
+        const images = validUrls.map((url) =>
           this.productImagesRepository.create({
             image_url: url,
             product_id: id,
